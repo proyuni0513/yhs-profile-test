@@ -197,9 +197,8 @@ async function saveFullReportPDF(btn){
  window.__pdfSaving=true;
  const label=btn?btn.textContent:'';
  if(btn){btn.disabled=true;btn.textContent='PDF 생성 중…';}
- let report;
+ let report=null,objectUrl=null;
  try{
-  // Directly download a multi-page PDF to the user's device; no student data is sent to our server.
   await loadPdfExporter();
   report=buildFullReport();
   report.style.display='block';
@@ -211,19 +210,32 @@ async function saveFullReportPDF(btn){
   report.style.padding='8mm';
   report.querySelectorAll('.actions,button').forEach(el=>el.remove());
   report.querySelectorAll('details').forEach(el=>el.open=true);
-  const opts={margin:5,filename:'고교선택_PROFILE_TEST_전체결과.pdf',
+  const filename='고교선택_PROFILE_TEST_1순위학교_결과.pdf';
+  const options={margin:5,filename,
    image:{type:'jpeg',quality:0.95},
    html2canvas:{scale:1.5,useCORS:true,backgroundColor:'#ffffff',scrollY:0},
    jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},
    pagebreak:{mode:['css','legacy'],avoid:['.card','.metric']}};
-  await window.html2pdf().set(opts).from(report).save();
+  // PDF 바이트를 먼저 완성하고 모바일에서는 공유/파일 저장 대화상자를 우선 사용.
+  const blob=await window.html2pdf().set(options).from(report).outputPdf('blob');
+  const file=new File([blob],filename,{type:'application/pdf'});
+  if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
+   try{await navigator.share({files:[file],title:'PROFILE TEST 1순위 학교 결과'});return;}
+   catch(shareErr){if(shareErr.name==='AbortError')return;console.warn('파일 공유를 지원하지 않아 다운로드로 전환합니다.',shareErr);}
+  }
+  objectUrl=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=objectUrl;a.download=filename;
+  document.body.appendChild(a);a.click();a.remove();
+  // 브라우저 다운로드 관리자에 전달할 시간을 확보합니다.
+  setTimeout(()=>URL.revokeObjectURL(objectUrl),60000);objectUrl=null;
+  const inApp=/KAKAOTALK|NAVER\(|Instagram|FBAN|FBAV|Line\//i.test(navigator.userAgent);
+  if(inApp)alert('앱 안의 브라우저에서는 PDF 저장이 차단될 수 있습니다. 파일이 보이지 않으면 오른쪽 위 메뉴에서 “다른 브라우저로 열기”를 선택한 뒤 Chrome 또는 삼성 인터넷에서 다시 저장해 주세요.');
  }catch(err){
-  console.error('PDF direct download unavailable; opening browser PDF save dialog',err);
-  if(report){report.remove();report=null;}
-  alert('직접 다운로드를 사용할 수 없어 인쇄 창을 엽니다. 대상에서 “PDF로 저장”을 선택해 주세요.');
-  printFullReport();
+  console.error('PDF 저장 오류',err);
+  alert('PDF 저장이 차단되었습니다. 카카오톡 등의 앱 안에서 열었다면 오른쪽 위 메뉴 → 다른 브라우저로 열기 → Chrome(또는 삼성 인터넷)에서 다시 PDF 저장을 눌러 주세요.');
  }finally{
   if(report)report.remove();
+  if(objectUrl)URL.revokeObjectURL(objectUrl);
   window.__pdfSaving=false;
   if(btn){btn.disabled=false;btn.textContent=label;}
  }
